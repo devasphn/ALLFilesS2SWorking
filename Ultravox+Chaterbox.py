@@ -1,18 +1,3 @@
-# ==============================================================================
-# UltraChat S2S - FINAL POLISHED VERSION
-#
-# CONGRATULATIONS! The core is working. This version adds the final polish.
-#
-# THIS VERSION FIXES THE SELF-INTERRUPTION (AUDIO CUTOFF) PROBLEM.
-#
-# A state machine (`self.is_speaking`) is added to the AudioProcessor.
-# - When the AI is about to play audio, it sets its state to "speaking".
-# - While "speaking", it ignores incoming audio from the microphone to prevent
-#   its own voice (acoustic echo) from triggering a new processing cycle.
-# - After it finishes playing the audio, it switches back to "listening".
-#
-# This should result in smooth, complete audio playback.
-# ==============================================================================
 
 import torch
 import asyncio
