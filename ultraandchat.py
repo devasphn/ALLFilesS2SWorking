@@ -397,6 +397,49 @@ HTML_CLIENT = """
 </html>
 """
 
+# --- ICE Candidate Parser ---
+def parse_ice_candidate(candidate_string: str) -> dict:
+    """Parse ICE candidate string into components"""
+    try:
+        if candidate_string.startswith("candidate:"):
+            candidate_string = candidate_string[10:]
+        
+        parts = candidate_string.split()
+        if len(parts) < 8:
+            raise ValueError(f"Invalid candidate string: {candidate_string}")
+        
+        # Basic fields: foundation component protocol priority ip port typ type
+        candidate_info = {
+            'foundation': parts[0],
+            'component': int(parts[1]),
+            'protocol': parts[2],
+            'priority': int(parts[3]),
+            'ip': parts[4],
+            'port': int(parts[5]),
+            'type': parts[7]  # parts[6] is 'typ'
+        }
+        
+        # Parse additional attributes
+        i = 8
+        while i < len(parts) - 1:
+            if parts[i] == "raddr":
+                candidate_info['relatedAddress'] = parts[i + 1]
+                i += 2
+            elif parts[i] == "rport":
+                candidate_info['relatedPort'] = int(parts[i + 1])
+                i += 2
+            elif parts[i] == "tcptype":
+                candidate_info['tcpType'] = parts[i + 1]
+                i += 2
+            else:
+                i += 1
+                
+        return candidate_info
+        
+    except Exception as e:
+        logger.error(f"Error parsing ICE candidate '{candidate_string}': {e}")
+        return {}
+
 # --- Enhanced VAD System ---
 class MultiVAD:
     def __init__(self):
@@ -461,7 +504,7 @@ class MultiVAD:
                             total_frames += 1
                     
                     if total_frames > 0:
-                        webrtc_result = speech_frames / total_frames > 0.4
+                        webrtc_result = speech_frames / total_frames > 0.3
                         
                 except Exception as e:
                     logger.debug(f"WebRTC VAD error: {e}")
@@ -478,15 +521,15 @@ class MultiVAD:
                         audio_tensor, 
                         self.silero_model, 
                         sampling_rate=16000,
-                        min_speech_duration_ms=250,
-                        threshold=0.3  # Lower threshold for better sensitivity
+                        min_speech_duration_ms=200,
+                        threshold=0.3
                     )
                     silero_result = len(timestamps) > 0
                 except Exception as e:
                     logger.debug(f"Silero VAD error: {e}")
                     silero_result = webrtc_result
             
-            final_result = webrtc_result or silero_result  # OR logic for better sensitivity
+            final_result = webrtc_result or silero_result
             logger.debug(f"VAD: energy={energy:.6f}, webrtc={webrtc_result}, silero={silero_result}, final={final_result}")
             return final_result
             
@@ -636,7 +679,7 @@ class AudioProcessor:
                     frame = await self.input_track.recv()
                     frame_count += 1
                     
-                    if frame_count % 100 == 0:  # Log every 100 frames (~2 seconds)
+                    if frame_count % 100 == 0:
                         logger.info(f"📊 Processed {frame_count} audio frames")
                     
                 except mediastreams.MediaStreamError as e:
@@ -880,14 +923,6 @@ async def websocket_handler(request):
                 pcs.remove(pc)
             await pc.close()
     
-    @pc.on("icecandidate")
-    def on_icecandidate(candidate):
-        logger.info(f"📤 ICE candidate generated: {candidate}")
-    
-    @pc.on("icecandidateerror")
-    def on_icecandidateerror(event):
-        logger.error(f"❌ ICE candidate error: {event}")
-    
     try:
         async for msg in ws:
             if msg.type == WSMsgType.TEXT:
@@ -915,23 +950,32 @@ async def websocket_handler(request):
                         candidate_data = data.get("candidate")
                         if candidate_data:
                             try:
-                                logger.info(f"📥 Processing ICE candidate: {candidate_data}")
-                                candidate = RTCIceCandidate(
-                                    component=candidate_data["component"],
-                                    foundation=candidate_data["foundation"], 
-                                    ip=candidate_data["address"],
-                                    port=candidate_data["port"],
-                                    priority=candidate_data["priority"],
-                                    protocol=candidate_data["protocol"],
-                                    type=candidate_data["type"],
-                                    sdpMid=candidate_data.get("sdpMid"),
-                                    sdpMLineIndex=candidate_data.get("sdpMLineIndex")
-                                )
-                                await pc.addIceCandidate(candidate)
-                                logger.info("✅ ICE candidate added")
+                                candidate_string = candidate_data.get("candidate", "")
+                                logger.info(f"📥 Processing ICE candidate: {candidate_string}")
+                                
+                                # Parse the candidate string
+                                parsed = parse_ice_candidate(candidate_string)
+                                if parsed:
+                                    candidate = RTCIceCandidate(
+                                        component=parsed["component"],
+                                        foundation=parsed["foundation"],
+                                        ip=parsed["ip"],
+                                        port=parsed["port"],
+                                        priority=parsed["priority"],
+                                        protocol=parsed["protocol"],
+                                        type=parsed["type"],
+                                        sdpMid=candidate_data.get("sdpMid"),
+                                        sdpMLineIndex=candidate_data.get("sdpMLineIndex"),
+                                        relatedAddress=parsed.get("relatedAddress"),
+                                        relatedPort=parsed.get("relatedPort"),
+                                        tcpType=parsed.get("tcpType")
+                                    )
+                                    await pc.addIceCandidate(candidate)
+                                    logger.info("✅ ICE candidate added successfully")
+                                else:
+                                    logger.warning("⚠️ Failed to parse ICE candidate")
                             except Exception as e:
                                 logger.error(f"❌ Error processing ICE candidate: {e}")
-                                logger.error(f"Candidate data: {candidate_data}")
                                 
                 except json.JSONDecodeError as e:
                     logger.error(f"❌ JSON decode error: {e}")
