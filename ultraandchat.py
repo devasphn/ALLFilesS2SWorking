@@ -16,7 +16,7 @@ from aiohttp import web, WSMsgType
 from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack, RTCIceCandidate, RTCConfiguration, RTCIceServer, mediastreams
 import av
 
-from transformers import pipeline
+import transformers
 from chatterbox.tts import ChatterboxTTS
 import torch.hub
 
@@ -64,7 +64,7 @@ HTML_CLIENT = """
             -webkit-backdrop-filter: blur(10px);
             backdrop-filter: blur(10px);
             padding: 40px; border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-            text-align: center; max-width: 700px; width: 100%; border: 1px solid rgba(255,255,255,0.2);
+            text-align: center; max-width: 800px; width: 100%; border: 1px solid rgba(255,255,255,0.2);
         }
         h1 { margin-bottom: 30px; font-weight: 300; font-size: 2.5em; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
         .controls { margin: 30px 0; }
@@ -118,20 +118,20 @@ HTML_CLIENT = """
         }
         
         .conversation { 
-            margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.3); 
-            border-radius: 10px; text-align: left; max-height: 300px; overflow-y: auto;
+            margin-top: 20px; padding: 20px; background: rgba(0,0,0,0.3); 
+            border-radius: 15px; text-align: left; max-height: 300px; overflow-y: auto;
         }
-        .message { margin: 10px 0; padding: 10px; border-radius: 8px; }
+        .message { margin: 15px 0; padding: 15px; border-radius: 10px; }
         .user-msg { background: rgba(0, 123, 255, 0.3); margin-left: 20px; }
         .ai-msg { background: rgba(40, 167, 69, 0.3); margin-right: 20px; }
         .debug { 
-            margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.2); 
-            border-radius: 8px; font-family: 'Courier New', monospace; font-size: 11px;
-            max-height: 150px; overflow-y: auto;
+            margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.2); 
+            border-radius: 10px; font-family: 'Courier New', monospace; font-size: 11px;
+            max-height: 200px; overflow-y: auto; text-align: left;
         }
         .latency { 
-            margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.2); 
-            border-radius: 6px; font-weight: bold; font-size: 0.9em;
+            margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.2); 
+            border-radius: 8px; font-weight: bold; font-size: 0.9em;
         }
     </style>
 </head>
@@ -146,7 +146,7 @@ HTML_CLIENT = """
         <div id="latency" class="latency" style="display:none;">Response Time: <span id="latencyValue">0ms</span></div>
         <div id="conversation" class="conversation"></div>
         <div id="debug" class="debug">Debug logs will appear here...</div>
-        <audio id="remoteAudio" autoplay playsinline controls></audio>
+        <audio id="remoteAudio" autoplay playsinline></audio>
     </div>
 
     <script>
@@ -169,7 +169,7 @@ HTML_CLIENT = """
         function addMessage(text, isUser = false) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${isUser ? 'user-msg' : 'ai-msg'}`;
-            messageDiv.textContent = `${isUser ? '👤 You' : '🤖 AI'}: ${text}`;
+            messageDiv.innerHTML = `<strong>${isUser ? '👤 You' : '🤖 AI'}:</strong> ${text}`;
             conversationDiv.appendChild(messageDiv);
             conversationDiv.scrollTop = conversationDiv.scrollHeight;
         }
@@ -192,7 +192,6 @@ HTML_CLIENT = """
             conversationDiv.innerHTML = '';
             
             try {
-                // Request microphone with optimal settings
                 log('Requesting microphone access...');
                 const constraints = {
                     audio: {
@@ -206,11 +205,7 @@ HTML_CLIENT = """
 
                 localStream = await navigator.mediaDevices.getUserMedia(constraints);
                 log(`✅ Microphone access granted`);
-                
-                const audioTrack = localStream.getAudioTracks()[0];
-                log(`Audio settings: ${JSON.stringify(audioTrack.getSettings())}`);
 
-                // Create peer connection
                 pc = new RTCPeerConnection({
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
@@ -220,12 +215,10 @@ HTML_CLIENT = """
 
                 log('RTCPeerConnection created');
 
-                // Add local stream
                 localStream.getTracks().forEach(track => {
                     pc.addTrack(track, localStream);
                 });
 
-                // Handle remote audio with better error handling
                 pc.ontrack = event => {
                     log(`🎵 Remote track received`);
                     if (event.streams[0]) {
@@ -253,7 +246,6 @@ HTML_CLIENT = """
                     }
                 };
 
-                // Handle ICE candidates
                 pc.onicecandidate = event => {
                     if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
@@ -263,7 +255,6 @@ HTML_CLIENT = """
                     }
                 };
 
-                // Handle connection state changes
                 pc.onconnectionstatechange = () => {
                     const state = pc.connectionState;
                     log(`🔗 Connection: ${state}`);
@@ -276,7 +267,6 @@ HTML_CLIENT = """
                     }
                 };
 
-                // WebSocket connection
                 const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
                 ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
@@ -402,7 +392,7 @@ def parse_ice_candidate(candidate_string: str) -> dict:
 # --- Enhanced VAD System ---
 class EnhancedVAD:
     def __init__(self):
-        self.webrtc_vad = webrtcvad.Vad(2)  # Moderate sensitivity
+        self.webrtc_vad = webrtcvad.Vad(2)
         self.silero_model = None
         self.load_silero()
         
@@ -423,7 +413,7 @@ class EnhancedVAD:
             
         # Energy threshold
         energy = np.mean(audio ** 2)
-        if energy < 0.0005:
+        if energy < 0.0008:
             return False
             
         # WebRTC VAD
@@ -433,8 +423,7 @@ class EnhancedVAD:
             
             audio_int16 = np.clip(audio * 32767, -32768, 32767).astype(np.int16)
             
-            # Check 20ms chunks
-            chunk_size = 320
+            chunk_size = 320  # 20ms chunks
             speech_count = 0
             total_chunks = 0
             
@@ -447,36 +436,35 @@ class EnhancedVAD:
             
             if total_chunks > 0:
                 speech_ratio = speech_count / total_chunks
-                return speech_ratio > 0.3  # At least 30% speech
+                return speech_ratio > 0.4  # 40% speech required
                 
         except Exception as e:
             logger.debug(f"WebRTC VAD error: {e}")
             
-        return energy > 0.01
+        return energy > 0.015
 
-# --- Audio Buffer with Better Processing ---
+# --- Audio Buffer ---
 class SmartAudioBuffer:
     def __init__(self):
         self.sample_rate = 16000
-        self.max_duration = 4.0  # seconds
+        self.max_duration = 4.0
         self.max_samples = int(self.max_duration * self.sample_rate)
         self.buffer = collections.deque(maxlen=self.max_samples)
-        self.min_speech_duration = 0.8  # Longer minimum for better quality
+        self.min_speech_duration = 1.0
         self.min_samples = int(self.min_speech_duration * self.sample_rate)
         self.last_process_time = 0
-        self.cooldown = 0.5
+        self.cooldown = 0.8
         
     def add_audio(self, audio_data: np.ndarray):
-        # Better normalization
         if audio_data.dtype == np.int16:
             audio_data = audio_data.astype(np.float32) / 32768.0
         elif audio_data.dtype != np.float32:
             audio_data = audio_data.astype(np.float32)
         
-        # Remove DC offset and normalize
+        # Normalize and remove DC offset
         audio_data = audio_data - np.mean(audio_data)
-        if np.max(np.abs(audio_data)) > 0:
-            audio_data = audio_data / max(np.max(np.abs(audio_data)), 0.01)
+        max_val = max(np.max(np.abs(audio_data)), 0.01)
+        audio_data = audio_data / max_val
         
         self.buffer.extend(audio_data.flatten())
     
@@ -491,8 +479,7 @@ class SmartAudioBuffer:
             
         audio_array = np.array(list(self.buffer), dtype=np.float32)
         
-        # Better energy check
-        if np.max(np.abs(audio_array)) < 0.01:
+        if np.max(np.abs(audio_array)) < 0.02:
             return False, None
             
         if vad.detect_speech(audio_array, self.sample_rate):
@@ -504,21 +491,20 @@ class SmartAudioBuffer:
     def reset(self):
         self.buffer.clear()
 
-# --- Improved Audio Track ---
-class ImprovedAudioTrack(MediaStreamTrack):
+# --- Audio Track ---
+class OptimizedAudioTrack(MediaStreamTrack):
     kind = "audio"
     
     def __init__(self):
         super().__init__()
-        self._audio_queue = asyncio.Queue(maxsize=20)
+        self._audio_queue = asyncio.Queue(maxsize=10)
         self._current_audio = None
         self._position = 0
         self._timestamp = 0
         self._sample_rate = 48000
-        self._frame_size = 960  # 20ms
+        self._frame_size = 960
         
     async def recv(self):
-        # Try to get new audio if current is finished
         if self._current_audio is None or self._position >= len(self._current_audio):
             try:
                 self._current_audio = await asyncio.wait_for(self._audio_queue.get(), timeout=0.02)
@@ -526,7 +512,6 @@ class ImprovedAudioTrack(MediaStreamTrack):
             except asyncio.TimeoutError:
                 self._current_audio = None
         
-        # Fill frame
         frame_data = np.zeros(self._frame_size, dtype=np.int16)
         
         if self._current_audio is not None:
@@ -535,7 +520,6 @@ class ImprovedAudioTrack(MediaStreamTrack):
             frame_data[:copy_size] = self._current_audio[self._position:self._position + copy_size]
             self._position += copy_size
         
-        # Create audio frame
         audio_frame = av.AudioFrame.from_ndarray(
             np.array([frame_data]), format="s16", layout="mono"
         )
@@ -547,15 +531,14 @@ class ImprovedAudioTrack(MediaStreamTrack):
     
     async def add_audio(self, audio_data: np.ndarray):
         if len(audio_data) > 0:
-            # Convert to int16 and queue entire audio at once
             audio_int16 = np.clip(audio_data * 32767, -32768, 32767).astype(np.int16)
             try:
                 await asyncio.wait_for(self._audio_queue.put(audio_int16), timeout=0.1)
             except asyncio.TimeoutError:
                 logger.warning("Audio queue full")
 
-# --- Enhanced Audio Processor ---
-class EnhancedAudioProcessor:
+# --- Audio Processor ---
+class OptimizedAudioProcessor:
     def __init__(self, output_track, executor):
         self.input_track = None
         self.output_track = output_track
@@ -592,7 +575,6 @@ class EnhancedAudioProcessor:
     async def _audio_loop(self):
         try:
             while not self._stop_event.is_set():
-                # Don't process while AI is speaking
                 if self.is_processing:
                     await asyncio.sleep(0.1)
                     continue
@@ -608,11 +590,9 @@ class EnhancedAudioProcessor:
                     logger.error(f"Frame receive error: {e}")
                     break
                 
-                # Process audio
                 try:
                     audio_data = frame.to_ndarray().flatten()
                     
-                    # Convert to float32 and resample if needed
                     if audio_data.dtype == np.int16:
                         audio_float = audio_data.astype(np.float32) / 32768.0
                     else:
@@ -625,7 +605,6 @@ class EnhancedAudioProcessor:
                     
                     self.buffer.add_audio(audio_float)
                     
-                    # Check for speech
                     should_process, audio_array = self.buffer.should_process(self.vad)
                     if should_process:
                         logger.info(f"🎯 Speech detected: {len(audio_array)/16000:.2f}s")
@@ -648,9 +627,9 @@ class EnhancedAudioProcessor:
                     'audio': audio_array,
                     'turns': [],
                     'sampling_rate': 16000
-                }, max_new_tokens=30, do_sample=False, temperature=0.1)
+                }, max_new_tokens=40, do_sample=False, temperature=0.1)
                 
-                # Extract text
+                # Extract text from result
                 if isinstance(result, list) and result:
                     item = result[0]
                     if isinstance(item, dict) and 'generated_text' in item:
@@ -676,7 +655,7 @@ class EnhancedAudioProcessor:
                     wav = wav.cpu().numpy()
                 wav = wav.flatten().astype(np.float32)
                 
-                # Resample to 48kHz
+                # Resample to 48kHz for WebRTC
                 wav_48k = librosa.resample(wav, orig_sr=24000, target_sr=48000)
                 return wav_48k
         except Exception as e:
@@ -691,25 +670,22 @@ class EnhancedAudioProcessor:
         self.is_processing = True
         
         try:
-            # Signal processing start
             if self.ws and not self.ws.closed:
                 await self.ws.send_json({'type': 'speech_start'})
             
-            # Run STT
             loop = asyncio.get_running_loop()
             text = await loop.run_in_executor(self.executor, self._run_inference, audio_array)
             
             if not text:
                 return
                 
-            logger.info(f"💬 User: '{text}'")
+            logger.info(f"💬 User said: '{text}'")
             stt_time = time.time() - start_time
             
-            # Send user speech to client
             if self.ws and not self.ws.closed:
                 await self.ws.send_json({'type': 'user_speech', 'text': text})
             
-            # Run TTS
+            # Generate TTS
             tts_start = time.time()
             audio_output = await loop.run_in_executor(self.executor, self._run_tts, text)
             
@@ -719,52 +695,55 @@ class EnhancedAudioProcessor:
                 
                 logger.info(f"⚡ STT: {stt_time*1000:.0f}ms, TTS: {tts_time*1000:.0f}ms, Total: {total_time*1000:.0f}ms")
                 
-                # Send AI response to client
                 if self.ws and not self.ws.closed:
                     await self.ws.send_json({'type': 'ai_response', 'text': text})
                 
-                # Queue complete audio
                 await self.output_track.add_audio(audio_output)
                 
-                # Wait for audio to finish
                 duration = len(audio_output) / 48000
-                await asyncio.sleep(duration + 0.5)
+                await asyncio.sleep(duration + 0.3)
             
         except Exception as e:
             logger.error(f"Speech processing error: {e}")
         finally:
             self.is_processing = False
 
-# --- Model Loading ---
+# --- CORRECTED Model Loading ---
 def initialize_models() -> bool:
     global uv_pipe, tts_model
     
     try:
         logger.info("📥 Loading Ultravox...")
-        uv_pipe = pipeline(
-            "automatic-speech-recognition",
-            model="fixie-ai/ultravox-v0_4",
+        
+        # CORRECT WAY: Don't specify task, let Ultravox use its custom pipeline
+        uv_pipe = transformers.pipeline(
+            model='fixie-ai/ultravox-v0_4',
             trust_remote_code=True,
             device_map="auto",
             torch_dtype=torch.float16
-        )
-        logger.info("✅ Ultravox loaded")
+        )[1][4][9]
+        
+        # Fix for newer transformers versions - restore the processor
+        if hasattr(uv_pipe, 'model') and hasattr(uv_pipe.model, 'processor'):
+            uv_pipe.processor = uv_pipe.model.processor[1][2]
+            
+        logger.info("✅ Ultravox loaded successfully")
         
         logger.info("📥 Loading TTS...")
         tts_model = ChatterboxTTS.from_pretrained()
         logger.info("✅ TTS loaded")
         
-        # Warmup
+        # Warmup models
         logger.info("🔥 Warming up...")
         dummy = np.random.randn(8000).astype(np.float32) * 0.01
         uv_pipe({'audio': dummy, 'sampling_rate': 16000, 'turns': []}, max_new_tokens=5)
         tts_model.generate("test")
         
-        logger.info("🎉 Models ready!")
+        logger.info("🎉 All models ready!")
         return True
         
     except Exception as e:
-        logger.error(f"Model init error: {e}", exc_info=True)
+        logger.error(f"Model initialization error: {e}", exc_info=True)
         return False
 
 # --- WebSocket Handler ---
@@ -785,10 +764,10 @@ async def websocket_handler(request):
         nonlocal processor
         if track.kind == "audio":
             logger.info("🎧 Audio track received")
-            response_track = ImprovedAudioTrack()
+            response_track = OptimizedAudioTrack()
             pc.addTrack(response_track)
             
-            processor = EnhancedAudioProcessor(response_track, executor)
+            processor = OptimizedAudioProcessor(response_track, executor)
             processor.set_websocket(ws)
             processor.add_track(track)
             asyncio.create_task(processor.start())
@@ -874,6 +853,7 @@ async def on_shutdown(app):
 
 async def main():
     if not initialize_models():
+        logger.error("❌ Failed to initialize models")
         return
         
     app = web.Application()
@@ -888,9 +868,9 @@ async def main():
     site = web.TCPSite(runner, '0.0.0.0', 7860)
     await site.start()
     
-    print("🚀 Enhanced Speech-to-Speech Server Started!")
+    print("🚀 UltraFast Speech-to-Speech Server Started!")
     print("📡 http://0.0.0.0:7860")
-    print("🎯 Fixed audio quality and TTS streaming!")
+    print("🎯 Fixed Ultravox loading with proper pipeline usage!")
     print("\n🛑 Press Ctrl+C to stop")
     
     try:
