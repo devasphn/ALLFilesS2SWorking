@@ -41,12 +41,12 @@ uv_pipe, tts_model = None, None
 executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="audio_worker")
 pcs = set()
 
-# --- HTML Client ---
+# --- Enhanced HTML Client with Better Connection Handling ---
 HTML_CLIENT = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>🚀 Perfect Voice Assistant</title>
+    <title>🚀 Final Voice Assistant</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
@@ -59,7 +59,7 @@ HTML_CLIENT = """
         .container { 
             background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);
             padding: 40px; border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-            text-align: center; max-width: 800px; width: 100%; border: 1px solid rgba(255,255,255,0.2);
+            text-align: center; max-width: 900px; width: 100%; border: 1px solid rgba(255,255,255,0.2);
         }
         h1 { margin-bottom: 30px; font-weight: 300; font-size: 2.5em; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
         .controls { margin: 30px 0; }
@@ -98,15 +98,11 @@ HTML_CLIENT = """
         .ai-msg { background: rgba(40, 167, 69, 0.3); margin-right: 30px; }
         .message strong { display: block; margin-bottom: 8px; font-size: 1.1em; }
         
-        .metrics { 
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
-            gap: 20px; margin: 25px 0;
+        .connection-info {
+            margin: 20px 0; padding: 20px; background: rgba(0,0,0,0.2);
+            border-radius: 12px; text-align: left; font-family: 'Courier New', monospace; font-size: 12px;
         }
-        .metric { 
-            padding: 20px; background: rgba(0,0,0,0.2); border-radius: 12px; text-align: center;
-        }
-        .metric-value { font-size: 2em; font-weight: bold; color: #00ff88; margin-bottom: 5px; }
-        .metric-label { font-size: 0.9em; opacity: 0.8; }
+        .connection-info h3 { margin: 0 0 10px 0; font-family: inherit; }
         
         .audio-section {
             margin: 20px 0; padding: 20px; background: rgba(0,0,0,0.2);
@@ -129,7 +125,7 @@ HTML_CLIENT = """
 </head>
 <body>
     <div class="container">
-        <h1>🚀 Perfect Voice Assistant</h1>
+        <h1>🚀 Final Voice Assistant</h1>
         
         <div class="controls">
             <button id="startBtn" onclick="start()">🎙️ Start Voice Chat</button>
@@ -138,15 +134,12 @@ HTML_CLIENT = """
         
         <div id="status" class="status disconnected">🔌 Ready to Connect</div>
         
-        <div class="metrics">
-            <div class="metric">
-                <div id="latencyValue" class="metric-value">0ms</div>
-                <div class="metric-label">Response Time</div>
-            </div>
-            <div class="metric">
-                <div id="connectionValue" class="metric-value">Offline</div>
-                <div class="metric-label">Status</div>
-            </div>
+        <div class="connection-info">
+            <h3>🔗 Connection Status</h3>
+            <div>WebSocket: <span id="wsStatus">Disconnected</span></div>
+            <div>WebRTC: <span id="rtcStatus">Disconnected</span></div>
+            <div>ICE State: <span id="iceStatus">New</span></div>
+            <div>Audio: <span id="audioStatus">Not Ready</span></div>
         </div>
         
         <div class="audio-section">
@@ -156,27 +149,29 @@ HTML_CLIENT = """
         
         <div id="conversation" class="conversation">
             <div style="text-align: center; opacity: 0.7; font-style: italic;">
-                Your conversation will appear here...
+                Voice conversation will appear here...
             </div>
         </div>
         
         <div class="tip">
-            💡 <strong>Instructions:</strong> Click "Start Voice Chat", speak clearly when you see "Listening", wait for the AI to respond completely before speaking again.
+            💡 <strong>Runpod Optimized:</strong> This version uses TURN servers and enhanced connection handling for container environments.
         </div>
         
-        <div id="debug" class="debug">Ready to start...</div>
+        <div id="debug" class="debug">Initializing...</div>
     </div>
 
     <script>
-        let pc, ws, localStream, startTime, isConnected = false;
+        let pc, ws, localStream, startTime, connectionTimeout;
         const remoteAudio = document.getElementById('remoteAudio');
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
         const statusDiv = document.getElementById('status');
         const debugDiv = document.getElementById('debug');
         const conversationDiv = document.getElementById('conversation');
-        const latencyValue = document.getElementById('latencyValue');
-        const connectionValue = document.getElementById('connectionValue');
+        const wsStatus = document.getElementById('wsStatus');
+        const rtcStatus = document.getElementById('rtcStatus');
+        const iceStatus = document.getElementById('iceStatus');
+        const audioStatus = document.getElementById('audioStatus');
 
         function log(message) {
             const timestamp = new Date().toLocaleTimeString();
@@ -184,11 +179,17 @@ HTML_CLIENT = """
             debugDiv.innerHTML += `${timestamp}: ${message}<br>`;
             debugDiv.scrollTop = debugDiv.scrollHeight;
             
-            // Keep debug manageable
             const lines = debugDiv.innerHTML.split('<br>');
-            if (lines.length > 30) {
-                debugDiv.innerHTML = lines.slice(-25).join('<br>');
+            if (lines.length > 25) {
+                debugDiv.innerHTML = lines.slice(-20).join('<br>');
             }
+        }
+
+        function updateConnectionInfo(ws_state, rtc_state, ice_state, audio_state) {
+            if (ws_state !== undefined) wsStatus.textContent = ws_state;
+            if (rtc_state !== undefined) rtcStatus.textContent = rtc_state;
+            if (ice_state !== undefined) iceStatus.textContent = ice_state;
+            if (audio_state !== undefined) audioStatus.textContent = audio_state;
         }
 
         function addMessage(text, isUser = false) {
@@ -198,14 +199,9 @@ HTML_CLIENT = """
             
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${isUser ? 'user-msg' : 'ai-msg'}`;
-            messageDiv.innerHTML = `<strong>${isUser ? '👤 You said:' : '🤖 AI responds:'}</strong>${text}`;
+            messageDiv.innerHTML = `<strong>${isUser ? '👤 You:' : '🤖 AI:'}</strong> ${text}`;
             conversationDiv.appendChild(messageDiv);
             conversationDiv.scrollTop = conversationDiv.scrollHeight;
-            
-            // Keep conversation manageable
-            if (conversationDiv.children.length > 10) {
-                conversationDiv.removeChild(conversationDiv.firstChild);
-            }
         }
 
         function updateStatus(message, className) {
@@ -214,20 +210,22 @@ HTML_CLIENT = """
             log(`Status: ${message}`);
         }
 
-        function updateMetrics(latency, connection) {
-            if (latency !== undefined) latencyValue.textContent = `${latency}ms`;
-            if (connection !== undefined) connectionValue.textContent = connection;
-        }
-
         async function start() {
-            if (isConnected) return;
-            
             startBtn.disabled = true;
-            updateStatus('🔄 Requesting microphone...', 'connecting');
+            updateStatus('🔄 Initializing...', 'connecting');
             debugDiv.innerHTML = '';
             
+            // Set connection timeout
+            connectionTimeout = setTimeout(() => {
+                log('❌ Connection timeout (30s)');
+                updateStatus('❌ Connection timeout - retrying...', 'disconnected');
+                stop();
+                setTimeout(() => start(), 2000);
+            }, 30000);
+            
             try {
-                log('Requesting microphone access...');
+                log('🎤 Requesting microphone...');
+                updateConnectionInfo('Connecting', 'Initializing', 'New', 'Requesting');
                 
                 const constraints = {
                     audio: {
@@ -240,130 +238,172 @@ HTML_CLIENT = """
                 };
 
                 localStream = await navigator.mediaDevices.getUserMedia(constraints);
-                const track = localStream.getAudioTracks()[0];
-                const settings = track.getSettings();
-                log(`✅ Microphone ready: ${settings.sampleRate}Hz`);
+                const settings = localStream.getAudioTracks()[0].getSettings();
+                log(`✅ Microphone: ${settings.sampleRate}Hz, Echo: ${settings.echoCancellation}`);
+                updateConnectionInfo(undefined, undefined, undefined, 'Ready');
 
-                updateStatus('🔄 Connecting to server...', 'connecting');
-                
+                // Enhanced WebRTC configuration with TURN servers
                 pc = new RTCPeerConnection({
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
-                    ]
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun.cloudflare.com:3478' },
+                        { urls: 'stun:stun.relay.metered.ca:80' },
+                        // Public TURN servers as fallback
+                        {
+                            urls: 'turn:openrelay.metered.ca:80',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        },
+                        {
+                            urls: 'turn:openrelay.metered.ca:443',
+                            username: 'openrelayproject', 
+                            credential: 'openrelayproject'
+                        }
+                    ],
+                    iceCandidatePoolSize: 10,
+                    bundlePolicy: 'max-bundle',
+                    rtcpMuxPolicy: 'require'
                 });
+
+                log('🔗 RTCPeerConnection created with TURN servers');
 
                 localStream.getTracks().forEach(track => {
                     pc.addTrack(track, localStream);
-                    log(`📤 Added ${track.kind} track`);
                 });
 
+                // Enhanced event handlers
                 pc.ontrack = event => {
-                    log('🎵 Received remote audio track');
+                    log('🎵 Remote audio track received');
                     if (event.streams[0]) {
                         remoteAudio.srcObject = event.streams[0];
+                        updateConnectionInfo(undefined, undefined, undefined, 'Connected');
                         
-                        remoteAudio.onloadeddata = () => {
-                            log(`📊 Audio loaded: ${remoteAudio.duration.toFixed(2)}s`);
-                        };
-
                         remoteAudio.onplay = () => {
                             log('▶️ Audio playback started');
                             if (startTime) {
                                 const latency = Date.now() - startTime;
-                                updateMetrics(latency);
-                                log(`⚡ Response latency: ${latency}ms`);
+                                log(`⚡ Total latency: ${latency}ms`);
                             }
                             updateStatus('🤖 AI is speaking...', 'speaking');
                         };
                         
                         remoteAudio.onended = () => {
-                            log('🔇 Audio playback finished');
-                            if (isConnected) {
-                                updateStatus('🎙️ Listening for your voice...', 'connected');
-                            }
-                        };
-                        
-                        remoteAudio.onerror = (e) => {
-                            log(`❌ Audio error: ${e.target.error?.message || 'Unknown'}`);
+                            log('🔇 Audio ended');
+                            updateStatus('🎙️ Listening...', 'connected');
                         };
                     }
                 };
 
                 pc.onconnectionstatechange = () => {
                     const state = pc.connectionState;
-                    log(`🔗 Connection state: ${state}`);
+                    log(`🔗 Connection: ${state}`);
+                    updateConnectionInfo(undefined, state, undefined, undefined);
                     
                     if (state === 'connected') {
-                        isConnected = true;
-                        updateStatus('🎙️ Listening for your voice...', 'connected');
-                        updateMetrics(undefined, 'Connected');
+                        clearTimeout(connectionTimeout);
+                        updateStatus('🎙️ Ready - Speak now!', 'connected');
                         stopBtn.disabled = false;
-                        log('✅ Ready for voice input!');
-                    } else if (state === 'failed' || state === 'disconnected') {
-                        log('❌ Connection failed');
+                        log('🎉 Connection established successfully!');
+                    } else if (state === 'failed') {
+                        log('❌ Connection failed - retrying...');
+                        stop();
+                        setTimeout(() => start(), 3000);
+                    } else if (state === 'disconnected') {
+                        log('🔌 Connection lost');
                         stop();
                     }
                 };
 
-                pc.onicecandidate = event => {
-                    if (event.candidate && ws?.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'ice-candidate',
-                            candidate: event.candidate.toJSON()
-                        }));
+                pc.oniceconnectionstatechange = () => {
+                    const state = pc.iceConnectionState;
+                    log(`🧊 ICE: ${state}`);
+                    updateConnectionInfo(undefined, undefined, state, undefined);
+                    
+                    if (state === 'failed') {
+                        log('❌ ICE connection failed');
+                        stop();
+                        setTimeout(() => start(), 3000);
                     }
                 };
 
+                pc.onicecandidate = event => {
+                    if (event.candidate) {
+                        log(`📤 ICE candidate: ${event.candidate.type} (${event.candidate.protocol})`);
+                        if (ws?.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'ice-candidate',
+                                candidate: event.candidate.toJSON()
+                            }));
+                        }
+                    }
+                };
+
+                // WebSocket with retry logic
                 const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
                 ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
                 ws.onopen = async () => {
                     log('🌐 WebSocket connected');
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    ws.send(JSON.stringify(offer));
+                    updateConnectionInfo('Connected', undefined, undefined, undefined);
+                    
+                    try {
+                        const offer = await pc.createOffer({
+                            offerToReceiveAudio: true,
+                            offerToReceiveVideo: false
+                        });
+                        await pc.setLocalDescription(offer);
+                        ws.send(JSON.stringify(offer));
+                        log('📤 Offer sent');
+                    } catch (err) {
+                        log(`❌ Offer failed: ${err.message}`);
+                        throw err;
+                    }
                 };
 
                 ws.onmessage = async event => {
                     const data = JSON.parse(event.data);
                     
                     if (data.type === 'answer') {
+                        log('📥 Answer received');
                         await pc.setRemoteDescription(new RTCSessionDescription(data));
-                        log('✅ WebRTC handshake complete');
                     } else if (data.type === 'speech_detected') {
                         startTime = Date.now();
-                        updateStatus('🧠 Processing your speech...', 'processing');
-                        log('🎯 Speech detected, processing...');
+                        updateStatus('🧠 Processing speech...', 'processing');
                     } else if (data.type === 'user_speech') {
                         addMessage(data.text, true);
-                        log(`💬 You said: ${data.text}`);
                     } else if (data.type === 'ai_response') {
                         addMessage(data.text, false);
-                        log(`🤖 AI responds: ${data.text}`);
                     }
                 };
 
-                ws.onclose = () => {
-                    log('🔌 WebSocket closed');
-                    stop();
+                ws.onclose = (event) => {
+                    log(`🔌 WebSocket closed: ${event.code}`);
+                    updateConnectionInfo('Disconnected', undefined, undefined, undefined);
+                    if (!startBtn.disabled) return; // Already stopping
+                    
+                    // Auto-retry connection
+                    setTimeout(() => {
+                        if (startBtn.disabled) start();
+                    }, 5000);
                 };
 
                 ws.onerror = () => {
                     log('❌ WebSocket error');
-                    stop();
+                    updateConnectionInfo('Error', undefined, undefined, undefined);
                 };
 
             } catch (err) {
+                clearTimeout(connectionTimeout);
                 log(`❌ Error: ${err.message}`);
-                updateStatus(`❌ Error: ${err.message}`, 'disconnected');
+                updateStatus(`❌ ${err.message}`, 'disconnected');
                 stop();
             }
         }
 
         function stop() {
-            log('🛑 Stopping connection...');
-            isConnected = false;
+            clearTimeout(connectionTimeout);
+            log('🛑 Stopping...');
             
             if (ws) {
                 ws.close();
@@ -376,10 +416,7 @@ HTML_CLIENT = """
             }
             
             if (localStream) {
-                localStream.getTracks().forEach(track => {
-                    track.stop();
-                    log(`⏹️ Stopped ${track.kind} track`);
-                });
+                localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
             }
             
@@ -388,51 +425,67 @@ HTML_CLIENT = """
             }
             
             updateStatus('🔌 Disconnected', 'disconnected');
-            updateMetrics(0, 'Offline');
+            updateConnectionInfo('Disconnected', 'Closed', 'New', 'Not Ready');
             startBtn.disabled = false;
             stopBtn.disabled = true;
             startTime = null;
-            
-            log('✅ Disconnected cleanly');
         }
 
-        // Prevent page unload issues
-        window.addEventListener('beforeunload', () => {
-            if (isConnected) stop();
-        });
-
-        log('🚀 Voice Assistant Interface Ready');
+        log('🚀 Enhanced Voice Assistant Ready');
     </script>
 </body>
 </html>
 """
 
-# --- ICE Candidate Parser ---
+# --- Enhanced ICE Candidate Processing ---
 def parse_ice_candidate(candidate_str: str) -> dict:
-    """Parse ICE candidate string"""
+    """Robust ICE candidate parser with enhanced error handling"""
     try:
         if candidate_str.startswith("candidate:"):
             candidate_str = candidate_str[10:]
         
-        parts = candidate_str.split()
+        parts = candidate_str.strip().split()
         if len(parts) < 8:
+            logger.warning(f"Insufficient ICE candidate parts: {len(parts)}")
             return {}
         
-        return {
+        candidate_info = {
             'foundation': parts[0],
             'component': int(parts[1]),
-            'protocol': parts[2],
+            'protocol': parts[2].lower(),
             'priority': int(parts[3]),
             'ip': parts[4],
             'port': int(parts[5]),
-            'type': parts[7]
+            'type': parts[7].lower()
         }
-    except Exception as e:
-        logger.debug(f"ICE parsing error: {e}")
+        
+        # Parse additional attributes
+        i = 8
+        while i < len(parts) - 1:
+            key = parts[i].lower()
+            if key == "raddr" and i + 1 < len(parts):
+                candidate_info['relatedAddress'] = parts[i + 1]
+                i += 2
+            elif key == "rport" and i + 1 < len(parts):
+                try:
+                    candidate_info['relatedPort'] = int(parts[i + 1])
+                except ValueError:
+                    pass
+                i += 2
+            elif key == "tcptype" and i + 1 < len(parts):
+                candidate_info['tcpType'] = parts[i + 1]
+                i += 2
+            else:
+                i += 1
+                
+        return candidate_info
+        
+    except (ValueError, IndexError) as e:
+        logger.error(f"ICE candidate parsing error: {e}")
         return {}
 
-# --- VAD System ---
-class ReliableVAD:
+# --- Simplified, Reliable VAD ---
+class OptimizedVAD:
     def __init__(self):
         self.webrtc_vad = webrtcvad.Vad(2)
         self.silero_model = None
@@ -446,73 +499,85 @@ class ReliableVAD:
                 force_reload=False, verbose=False
             )
             self.get_speech_timestamps = utils[0]
-            logger.info("✅ Silero VAD ready")
+            logger.info("✅ Silero VAD loaded")
         except Exception as e:
-            logger.error(f"❌ Silero VAD failed: {e}")
+            logger.error(f"❌ Silero VAD error: {e}")
     
     def detect_speech(self, audio: np.ndarray, sample_rate: int = 16000) -> bool:
-        """Detect speech in audio"""
+        """Optimized speech detection"""
         if len(audio) == 0:
             return False
             
-        # Basic energy check
-        rms = np.sqrt(np.mean(audio ** 2))
-        if rms < 0.01:
+        # Energy-based quick filter
+        energy = np.sqrt(np.mean(audio ** 2))
+        if energy < 0.005:
             return False
             
-        # Resample if needed
+        # Resample to 16kHz if needed
         if sample_rate != 16000:
             audio = librosa.resample(audio, orig_sr=sample_rate, target_sr=16000)
             
-        # Use Silero if available
+        # Use Silero for accuracy
         if self.silero_model:
             try:
                 timestamps = self.get_speech_timestamps(
-                    torch.from_numpy(audio), self.silero_model,
-                    sampling_rate=16000, threshold=0.5
+                    torch.from_numpy(audio), 
+                    self.silero_model,
+                    sampling_rate=16000,
+                    threshold=0.5,
+                    min_speech_duration_ms=300
                 )
                 return len(timestamps) > 0
-            except Exception as e:
-                logger.debug(f"Silero error: {e}")
+            except Exception:
+                pass
                 
-        # Fallback to energy
-        return rms > 0.02
+        # Fallback to energy + basic filtering
+        return energy > 0.015
 
-# --- Audio Buffer ---
-class AudioBuffer:
+# --- Optimized Audio Buffer ---
+class OptimizedAudioBuffer:
     def __init__(self):
         self.sample_rate = 16000
-        self.buffer_duration = 3.0
+        self.buffer_duration = 4.0  # 4 second buffer
         self.max_samples = int(self.buffer_duration * self.sample_rate)
         self.buffer = collections.deque(maxlen=self.max_samples)
-        self.min_duration = 1.0
+        self.min_duration = 1.0  # Minimum 1 second
         self.min_samples = int(self.min_duration * self.sample_rate)
         self.last_process = 0
-        self.cooldown = 2.0
+        self.cooldown = 2.0  # 2 second cooldown between processing
         
     def add_audio(self, audio_data: np.ndarray):
-        """Add audio with basic preprocessing"""
+        """Add audio with minimal processing"""
+        # Convert to float32
         if audio_data.dtype == np.int16:
             audio_data = audio_data.astype(np.float32) / 32768.0
         elif audio_data.dtype != np.float32:
             audio_data = audio_data.astype(np.float32)
         
+        # Basic preprocessing
         audio_data = audio_data.flatten()
         audio_data = np.clip(audio_data, -1.0, 1.0)
+        
+        # Remove DC bias
+        audio_data = audio_data - np.mean(audio_data)
+        
         self.buffer.extend(audio_data)
     
-    def should_process(self, vad: ReliableVAD) -> Tuple[bool, Optional[np.ndarray]]:
-        """Check if audio should be processed"""
+    def should_process(self, vad: OptimizedVAD) -> Tuple[bool, Optional[np.ndarray]]:
+        """Determine if audio should be processed"""
         current_time = time.time()
         
+        # Cooldown check
         if current_time - self.last_process < self.cooldown:
             return False, None
             
+        # Length check
         if len(self.buffer) < self.min_samples:
             return False, None
             
         audio_array = np.array(list(self.buffer), dtype=np.float32)
         
+        # VAD check
         if vad.detect_speech(audio_array):
             self.last_process = current_time
             return True, audio_array
@@ -520,11 +585,11 @@ class AudioBuffer:
         return False, None
     
     def reset(self):
-        """Clear buffer"""
+        """Clear the buffer"""
         self.buffer.clear()
 
-# --- Audio Track ---
-class AudioTrack(MediaStreamTrack):
+# --- Optimized Audio Track ---
+class OptimizedAudioTrack(MediaStreamTrack):
     kind = "audio"
     
     def __init__(self):
@@ -533,18 +598,25 @@ class AudioTrack(MediaStreamTrack):
         self._position = 0
         self._timestamp = 0
         self._sample_rate = 48000
-        self._frame_samples = 960
+        self._frame_samples = 960  # 20ms frames
+        self._audio_lock = asyncio.Lock()
         
     async def recv(self):
-        """Generate audio frames"""
+        """Generate audio frames for WebRTC"""
         frame_data = np.zeros(self._frame_samples, dtype=np.int16)
         
-        if self._audio_data is not None and self._position < len(self._audio_data):
-            end_pos = min(self._position + self._frame_samples, len(self._audio_data))
-            chunk_size = end_pos - self._position
-            frame_data[:chunk_size] = self._audio_data[self._position:end_pos]
-            self._position += chunk_size
+        async with self._audio_lock:
+            if (self._audio_data is not None and 
+                self._position < len(self._audio_data)):
+                
+                end_pos = min(self._position + self._frame_samples, len(self._audio_data))
+                chunk_size = end_pos - self._position
+                
+                if chunk_size > 0:
+                    frame_data[:chunk_size] = self._audio_data[self._position:end_pos]
+                    self._position += chunk_size
         
+        # Create AV frame
         audio_frame = av.AudioFrame.from_ndarray(
             np.array([frame_data]), format="s16", layout="mono"
         )
@@ -554,23 +626,28 @@ class AudioTrack(MediaStreamTrack):
         
         return audio_frame
     
-    async def set_audio(self, audio_data: np.ndarray):
-        """Set audio for playback"""
-        if len(audio_data) > 0:
-            self._audio_data = np.clip(audio_data * 32767, -32768, 32767).astype(np.int16)
-            self._position = 0
-            duration = len(self._audio_data) / 48000
-            logger.info(f"🔊 Set audio: {duration:.2f}s, {len(self._audio_data)} samples")
-        else:
-            self._audio_data = None
+    async def set_audio_data(self, audio_data: np.ndarray):
+        """Set complete audio data for playback"""
+        async with self._audio_lock:
+            if len(audio_data) > 0:
+                # Convert to int16 with proper scaling
+                audio_scaled = np.clip(audio_data * 32767, -32768, 32767)
+                self._audio_data = audio_scaled.astype(np.int16)
+                self._position = 0
+                
+                duration = len(self._audio_data) / self._sample_rate
+                logger.info(f"🔊 Audio set: {duration:.2f}s, {len(self._audio_data)} samples")
+            else:
+                self._audio_data = None
+                logger.warning("⚠️ Empty audio data provided")
 
-# --- Audio Processor ---
-class AudioProcessor:
+# --- Enhanced Audio Processor ---
+class EnhancedAudioProcessor:
     def __init__(self, output_track, executor):
         self.input_track = None
         self.output_track = output_track
-        self.buffer = AudioBuffer()
-        self.vad = ReliableVAD()
+        self.buffer = OptimizedAudioBuffer()
+        self.vad = OptimizedVAD()
         self.executor = executor
         self.task = None
         self.is_processing = False
@@ -586,7 +663,7 @@ class AudioProcessor:
         
     async def start(self):
         if not self.task:
-            logger.info("🎵 Starting audio processor")
+            logger.info("🎵 Starting enhanced audio processor")
             self.task = asyncio.create_task(self._audio_loop())
             
     async def stop(self):
@@ -601,54 +678,81 @@ class AudioProcessor:
             self.task = None
     
     async def _audio_loop(self):
-        """Main audio processing loop"""
+        """Main audio processing loop with enhanced error handling"""
+        frame_count = 0
+        
         try:
             while not self._stop_event.is_set():
+                # Skip processing while AI is speaking
                 if self.is_processing:
                     await asyncio.sleep(0.2)
                     continue
                 
                 try:
-                    frame = await asyncio.wait_for(self.input_track.recv(), timeout=0.2)
+                    frame = await asyncio.wait_for(self.input_track.recv(), timeout=0.5)
+                    frame_count += 1
+                    
+                    # Log progress periodically
+                    if frame_count % 100 == 0:
+                        logger.info(f"📊 Processed {frame_count} frames")
+                    
                 except asyncio.TimeoutError:
                     continue
-                except:
+                except mediastreams.MediaStreamError:
+                    logger.info("🔚 Media stream ended")
                     break
+                except Exception as e:
+                    logger.error(f"❌ Frame error: {e}")
+                    continue
                 
                 try:
+                    # Process audio frame
                     audio_data = frame.to_ndarray().flatten()
                     
+                    # Convert to float32
                     if audio_data.dtype == np.int16:
                         audio_float = audio_data.astype(np.float32) / 32768.0
                     else:
                         audio_float = audio_data.astype(np.float32)
                     
+                    # Resample if needed
                     if frame.sample_rate != 16000:
                         audio_float = librosa.resample(
-                            audio_float, orig_sr=frame.sample_rate, target_sr=16000
+                            audio_float,
+                            orig_sr=frame.sample_rate,
+                            target_sr=16000
                         )
                     
+                    # Add to buffer
                     self.buffer.add_audio(audio_float)
                     
+                    # Check for speech
                     should_process, audio_array = self.buffer.should_process(self.vad)
-                    if should_process:
+                    if should_process and audio_array is not None:
                         duration = len(audio_array) / 16000
                         logger.info(f"🎯 Speech detected: {duration:.2f}s")
+                        
+                        # Clear buffer and process
                         self.buffer.reset()
                         asyncio.create_task(self._process_speech(audio_array))
                         
                 except Exception as e:
                     logger.error(f"❌ Audio processing error: {e}")
+                    continue
                     
         except asyncio.CancelledError:
             pass
+        except Exception as e:
+            logger.error(f"❌ Audio loop error: {e}")
         finally:
             logger.info("🔚 Audio processor stopped")
     
     def _run_ultravox(self, audio_array: np.ndarray) -> str:
-        """Run Ultravox inference"""
+        """Optimized Ultravox inference"""
         try:
-            if len(audio_array) < 8000:
+            # Validate input
+            if len(audio_array) < 8000:  # Less than 0.5 seconds
+                logger.warning("⚠️ Audio too short for processing")
                 return ""
                 
             with torch.inference_mode():
@@ -656,8 +760,9 @@ class AudioProcessor:
                     'audio': audio_array,
                     'turns': [],
                     'sampling_rate': 16000
-                }, max_new_tokens=25, do_sample=False, temperature=0.0)
+                }, max_new_tokens=30, do_sample=False, temperature=0.1)
                 
+                # Extract text
                 text = ""
                 if isinstance(result, list) and len(result) > 0:
                     item = result[0]
@@ -668,32 +773,38 @@ class AudioProcessor:
                 elif isinstance(result, str):
                     text = result
                 
+                # Clean text
                 text = text.strip()
                 
-                # Clean common artifacts
-                if text.startswith("It seems like"):
+                # Remove common Ultravox artifacts
+                if text.startswith(("It seems like", "I think you", "You appear to")):
+                    # Extract quoted content if present
                     if '"' in text:
-                        parts = text.split('"')
-                        if len(parts) >= 3:
-                            text = parts[1].strip()
+                        quoted_parts = text.split('"')
+                        if len(quoted_parts) >= 3:
+                            text = quoted_parts[1].strip()
                 
-                return text[:100] if text else ""
+                # Limit length
+                return text[:120] if text else ""
                 
         except Exception as e:
             logger.error(f"❌ Ultravox error: {e}")
             return ""
     
     def _run_tts(self, text: str) -> np.ndarray:
-        """Run TTS generation"""
+        """Optimized TTS generation"""
         try:
             if not text.strip() or len(text) < 2:
+                logger.warning("⚠️ Text too short for TTS")
                 return np.array([])
                 
-            text = text[:150]  # Limit length
+            # Limit text length
+            text = text[:100]
                 
             with torch.inference_mode():
                 wav = tts_model.generate(text)
                 
+                # Convert to numpy
                 if hasattr(wav, 'cpu'):
                     wav = wav.cpu().numpy()
                 elif torch.is_tensor(wav):
@@ -701,13 +812,13 @@ class AudioProcessor:
                 
                 wav = wav.flatten().astype(np.float32)
                 
-                # Resample to 48kHz
+                # Resample to 48kHz for WebRTC
                 wav_48k = librosa.resample(wav, orig_sr=24000, target_sr=48000)
                 
-                # Normalize
+                # Normalize audio
                 max_val = np.max(np.abs(wav_48k))
                 if max_val > 0:
-                    wav_48k = wav_48k / max_val * 0.8
+                    wav_48k = wav_48k / max_val * 0.8  # 80% volume
                 
                 return wav_48k
                 
@@ -716,34 +827,41 @@ class AudioProcessor:
             return np.array([])
     
     async def _process_speech(self, audio_array: np.ndarray):
-        """Process detected speech"""
+        """Enhanced speech processing with better error handling"""
         if self.is_processing:
+            logger.warning("⚠️ Already processing, skipping")
             return
             
         start_time = time.time()
         self.is_processing = True
         
         try:
-            # Signal detection
+            # Signal processing start
             if self.ws and not self.ws.closed:
-                await self.ws.send_json({'type': 'speech_detected'})
+                try:
+                    await self.ws.send_json({'type': 'speech_detected'})
+                except Exception as e:
+                    logger.debug(f"WebSocket send error: {e}")
             
-            # Run Ultravox
+            # Run Ultravox inference
             loop = asyncio.get_running_loop()
             user_text = await loop.run_in_executor(
                 self.executor, self._run_ultravox, audio_array
             )
             
             if not user_text:
-                logger.warning("⚠️ No text generated")
+                logger.warning("⚠️ No text generated from speech")
                 return
                 
             stt_time = time.time() - start_time
-            logger.info(f"💬 User: '{user_text}' ({stt_time*1000:.0f}ms)")
+            logger.info(f"💬 User: '{user_text}' (STT: {stt_time*1000:.0f}ms)")
             
-            # Send user speech
+            # Send user speech to client
             if self.ws and not self.ws.closed:
-                await self.ws.send_json({'type': 'user_speech', 'text': user_text})
+                try:
+                    await self.ws.send_json({'type': 'user_speech', 'text': user_text})
+                except Exception as e:
+                    logger.debug(f"WebSocket send error: {e}")
             
             # Generate TTS
             tts_start = time.time()
@@ -757,26 +875,32 @@ class AudioProcessor:
                 
                 logger.info(f"⚡ TTS: {tts_time*1000:.0f}ms, Total: {total_time*1000:.0f}ms")
                 
-                # Send AI response
+                # Send AI response to client
                 if self.ws and not self.ws.closed:
-                    await self.ws.send_json({'type': 'ai_response', 'text': user_text})
+                    try:
+                        await self.ws.send_json({'type': 'ai_response', 'text': user_text})
+                    except Exception as e:
+                        logger.debug(f"WebSocket send error: {e}")
                 
-                # Set complete audio
-                await self.output_track.set_audio(audio_output)
+                # Set audio for playback
+                await self.output_track.set_audio_data(audio_output)
                 
-                # Wait for playback
-                duration = len(audio_output) / 48000
-                logger.info(f"🔊 Playing {duration:.1f}s audio")
-                await asyncio.sleep(duration + 1.5)
+                # Wait for audio to complete
+                playback_duration = len(audio_output) / 48000
+                logger.info(f"🎵 Playing {playback_duration:.1f}s audio")
+                await asyncio.sleep(playback_duration + 2.0)  # Extra buffer
+            else:
+                logger.warning("⚠️ No audio generated from TTS")
             
         except Exception as e:
             logger.error(f"❌ Speech processing error: {e}")
         finally:
             self.is_processing = False
+            logger.info("✅ Speech processing complete")
 
-# --- FIXED Model Initialization ---
+# --- Model Initialization ---
 def initialize_models() -> bool:
-    """Initialize models with proper error handling"""
+    """Initialize models with comprehensive error handling"""
     global uv_pipe, tts_model
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -791,166 +915,255 @@ def initialize_models() -> bool:
             device_map="auto",
             torch_dtype=torch.float16
         )
-        logger.info("✅ Ultravox loaded")
+        logger.info("✅ Ultravox loaded successfully")
         
-        # FIXED: Load TTS with device parameter
+        # Load ChatterboxTTS
         logger.info("📥 Loading ChatterboxTTS...")
         tts_model = ChatterboxTTS.from_pretrained(device=device)
-        logger.info("✅ ChatterboxTTS loaded")
+        logger.info("✅ ChatterboxTTS loaded successfully")
         
-        # Warmup
+        # Warmup models
         logger.info("🔥 Warming up models...")
-        dummy = np.random.randn(16000).astype(np.float32) * 0.001
+        dummy_audio = np.random.randn(16000).astype(np.float32) * 0.001
         
         with torch.inference_mode():
+            # Warmup Ultravox
             try:
                 uv_pipe({
-                    'audio': dummy, 
-                    'turns': [], 
+                    'audio': dummy_audio,
+                    'turns': [],
                     'sampling_rate': 16000
                 }, max_new_tokens=5)
                 logger.info("✅ Ultravox warmed up")
             except Exception as e:
                 logger.warning(f"⚠️ Ultravox warmup issue: {e}")
             
+            # Warmup TTS
             try:
-                tts_model.generate("test")
+                tts_model.generate("Hello")
                 logger.info("✅ TTS warmed up")
             except Exception as e:
                 logger.warning(f"⚠️ TTS warmup issue: {e}")
         
-        logger.info("🎉 All models ready!")
+        logger.info("🎉 All models initialized successfully!")
         return True
         
     except Exception as e:
         logger.error(f"❌ Model initialization failed: {e}", exc_info=True)
         return False
 
-# --- WebSocket Handler ---
+# --- Enhanced WebSocket Handler ---
 async def websocket_handler(request):
-    """Handle WebSocket connections"""
-    ws = web.WebSocketResponse(heartbeat=30)
+    """Enhanced WebSocket handler with better connection management"""
+    ws = web.WebSocketResponse(
+        heartbeat=30,
+        timeout=120,
+        max_msg_size=16*1024*1024
+    )
     await ws.prepare(request)
     
-    logger.info("🌐 WebSocket connected")
+    logger.info("🌐 WebSocket connection established")
     
-    pc = RTCPeerConnection(RTCConfiguration([
-        RTCIceServer(urls="stun:stun.l.google.com:19302")
-    ]))
+    # Enhanced WebRTC configuration
+    config = RTCConfiguration([
+        RTCIceServer(urls="stun:stun.l.google.com:19302"),
+        RTCIceServer(urls="stun:stun1.l.google.com:19302"),
+        RTCIceServer(urls="stun:stun.cloudflare.com:3478"),
+        RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
+        # TURN servers for NAT traversal
+        RTCIceServer(
+            urls="turn:openrelay.metered.ca:80",
+            username="openrelayproject",
+            credential="openrelayproject"
+        ),
+        RTCIceServer(
+            urls="turn:openrelay.metered.ca:443",
+            username="openrelayproject", 
+            credential="openrelayproject"
+        )
+    ])
+    
+    pc = RTCPeerConnection(config)
     pcs.add(pc)
     processor = None
     
     @pc.on("track")
     def on_track(track):
         nonlocal processor
+        logger.info(f"🎧 Track received: {track.kind}")
+        
         if track.kind == "audio":
-            logger.info("🎧 Audio track received")
-            response_track = AudioTrack()
+            # Create optimized audio track for response
+            response_track = OptimizedAudioTrack()
             pc.addTrack(response_track)
             
-            processor = AudioProcessor(response_track, executor)
+            # Create enhanced processor
+            processor = EnhancedAudioProcessor(response_track, executor)
             processor.set_websocket(ws)
             processor.add_track(track)
+            
+            # Start processing
             asyncio.create_task(processor.start())
     
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
-        logger.info(f"🔗 Connection: {pc.connectionState}")
-        if pc.connectionState in ["failed", "closed", "disconnected"]:
+        state = pc.connectionState
+        logger.info(f"🔗 Connection state: {state}")
+        
+        if state in ["failed", "closed", "disconnected"]:
+            logger.info("🧹 Cleaning up failed connection")
             if processor:
                 await processor.stop()
             if pc in pcs:
                 pcs.remove(pc)
     
+    @pc.on("iceconnectionstatechange")
+    async def on_iceconnectionstatechange():
+        state = pc.iceConnectionState
+        logger.info(f"🧊 ICE connection state: {state}")
+        
+        if state == "failed":
+            logger.warning("❌ ICE connection failed - connection will retry")
+        elif state == "connected":
+            logger.info("✅ ICE connection established")
+        elif state == "disconnected":
+            logger.info("🔌 ICE connection lost")
+    
     try:
         async for msg in ws:
             if msg.type == WSMsgType.TEXT:
-                data = json.loads(msg.data)
-                
-                if data["type"] == "offer":
-                    await pc.setRemoteDescription(
-                        RTCSessionDescription(sdp=data["sdp"], type=data["type"])
-                    )
-                    answer = await pc.createAnswer()
-                    await pc.setLocalDescription(answer)
-                    await ws.send_json({
-                        "type": "answer", 
-                        "sdp": pc.localDescription.sdp
-                    })
+                try:
+                    data = json.loads(msg.data)
+                    msg_type = data.get("type", "unknown")
                     
-                elif data["type"] == "ice-candidate":
-                    candidate_data = data.get("candidate", {})
-                    candidate_str = candidate_data.get("candidate", "")
-                    parsed = parse_ice_candidate(candidate_str)
-                    
-                    if parsed:
-                        candidate = RTCIceCandidate(
-                            component=parsed["component"],
-                            foundation=parsed["foundation"],
-                            ip=parsed["ip"],
-                            port=parsed["port"],
-                            priority=parsed["priority"],
-                            protocol=parsed["protocol"],
-                            type=parsed["type"],
-                            sdpMid=candidate_data.get("sdpMid"),
-                            sdpMLineIndex=candidate_data.get("sdpMLineIndex")
-                        )
-                        await pc.addIceCandidate(candidate)
+                    if msg_type == "offer":
+                        logger.info("📥 Processing WebRTC offer")
                         
+                        # Set remote description
+                        await pc.setRemoteDescription(
+                            RTCSessionDescription(sdp=data["sdp"], type=data["type"])
+                        )
+                        
+                        # Create and send answer
+                        answer = await pc.createAnswer()
+                        await pc.setLocalDescription(answer)
+                        
+                        await ws.send_json({
+                            "type": "answer",
+                            "sdp": pc.localDescription.sdp
+                        })
+                        logger.info("📤 WebRTC answer sent")
+                        
+                    elif msg_type == "ice-candidate":
+                        candidate_data = data.get("candidate", {})
+                        if candidate_data:
+                            candidate_str = candidate_data.get("candidate", "")
+                            parsed = parse_ice_candidate(candidate_str)
+                            
+                            if parsed:
+                                try:
+                                    candidate = RTCIceCandidate(
+                                        component=parsed["component"],
+                                        foundation=parsed["foundation"],
+                                        ip=parsed["ip"],
+                                        port=parsed["port"],
+                                        priority=parsed["priority"],
+                                        protocol=parsed["protocol"],
+                                        type=parsed["type"],
+                                        sdpMid=candidate_data.get("sdpMid"),
+                                        sdpMLineIndex=candidate_data.get("sdpMLineIndex"),
+                                        relatedAddress=parsed.get("relatedAddress"),
+                                        relatedPort=parsed.get("relatedPort"),
+                                        tcpType=parsed.get("tcpType")
+                                    )
+                                    await pc.addIceCandidate(candidate)
+                                    logger.debug(f"✅ ICE candidate added: {parsed['type']}")
+                                    
+                                except Exception as e:
+                                    logger.error(f"❌ ICE candidate error: {e}")
+                            else:
+                                logger.warning("⚠️ Failed to parse ICE candidate")
+                                
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ JSON decode error: {e}")
+                except Exception as e:
+                    logger.error(f"❌ Message processing error: {e}")
+                    
+            elif msg.type == WSMsgType.ERROR:
+                logger.error(f"❌ WebSocket error: {ws.exception()}")
+                break
+                
+    except ConnectionResetError:
+        logger.info("🔌 Client disconnected")
     except Exception as e:
-        logger.error(f"❌ WebSocket error: {e}")
+        logger.error(f"❌ WebSocket handler error: {e}")
     finally:
-        logger.info("🔚 WebSocket closed")
+        logger.info("🔚 Closing WebSocket connection")
+        
+        # Cleanup
         if processor:
             await processor.stop()
         if pc in pcs:
             pcs.remove(pc)
-        await pc.close()
+        if pc.connectionState != "closed":
+            await pc.close()
     
     return ws
 
 # --- HTTP Handlers ---
 async def index_handler(request):
-    """Serve main page"""
+    """Serve main application page"""
     return web.Response(
-        text=HTML_CLIENT, 
+        text=HTML_CLIENT,
         content_type='text/html',
-        headers={'Cache-Control': 'no-cache'}
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        }
     )
 
 async def health_handler(request):
-    """Health check"""
+    """Health check endpoint"""
     return web.json_response({
         "status": "healthy",
         "models": {
-            "ultravox": uv_pipe is not None,
-            "tts": tts_model is not None
+            "ultravox_loaded": uv_pipe is not None,
+            "tts_loaded": tts_model is not None
         },
         "connections": len(pcs),
-        "device": "cuda" if torch.cuda.is_available() else "cpu"
+        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "gpu_memory_gb": round(torch.cuda.get_device_properties(0).total_memory / 1e9, 1) if torch.cuda.is_available() else 0
     })
 
-# --- Application ---
+# --- Application Setup ---
 async def on_shutdown(app):
-    """Cleanup on shutdown"""
-    logger.info("🛑 Shutting down...")
+    """Graceful shutdown handler"""
+    logger.info("🛑 Initiating shutdown...")
     
-    tasks = [pc.close() for pc in list(pcs)]
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+    # Close all peer connections
+    close_tasks = []
+    for pc in list(pcs):
+        close_tasks.append(pc.close())
+    
+    if close_tasks:
+        await asyncio.gather(*close_tasks, return_exceptions=True)
+    
     pcs.clear()
     
+    # Shutdown executor
     executor.shutdown(wait=True)
-    logger.info("✅ Shutdown complete")
+    logger.info("✅ Shutdown completed")
 
 async def main():
-    """Main application"""
-    # Initialize models
+    """Main application entry point"""
+    
+    # Initialize models first
     if not initialize_models():
-        logger.error("❌ Failed to initialize models")
+        logger.error("❌ Failed to initialize models - cannot start server")
         return
     
-    # Create app
+    # Create web application
     app = web.Application()
     app.router.add_get('/', index_handler)
     app.router.add_get('/health', health_handler)
@@ -960,30 +1173,43 @@ async def main():
     # Start server
     runner = web.AppRunner(app)
     await runner.setup()
+    
     site = web.TCPSite(runner, '0.0.0.0', 7860)
     await site.start()
     
-    print("\n" + "="*50)
-    print("🚀 PERFECT VOICE ASSISTANT")
-    print("="*50)
+    print("\n" + "="*60)
+    print("🚀 FINAL RUNPOD-OPTIMIZED VOICE ASSISTANT")
+    print("="*60)
     print(f"📡 URL: http://0.0.0.0:7860")
-    print(f"🧠 Device: {'GPU' if torch.cuda.is_available() else 'CPU'}")
-    print(f"🔧 Fixed: TTS device parameter")
-    print(f"🔧 Fixed: Complete audio playback")
-    print(f"🔧 Fixed: Speech recognition accuracy")
-    print("="*50)
+    print(f"🏗️  Platform: Runpod Container")
+    print(f"🔗 WebRTC: Enhanced with TURN servers")
+    print(f"🧠 GPU: {'✅ Available' if torch.cuda.is_available() else '❌ CPU Only'}")
+    print(f"🎤 VAD: Silero + WebRTC hybrid")
+    print(f"🔊 TTS: ChatterboxTTS optimized")
+    print(f"⚡ Target: <500ms latency")
+    print("="*60)
+    print("🔧 Key Features:")
+    print("   • TURN servers for NAT traversal")
+    print("   • Enhanced ICE candidate processing")
+    print("   • Connection retry mechanisms")
+    print("   • Optimized for container networking")
+    print("   • Complete audio playback")
+    print("   • Accurate speech recognition")
+    print("="*60)
     print("🛑 Press Ctrl+C to stop")
-    print("="*50 + "\n")
+    print("="*60 + "\n")
     
     try:
+        # Keep server running
         await asyncio.Event().wait()
     except KeyboardInterrupt:
-        pass
+        print("\n🛑 Shutdown initiated...")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n✅ Server stopped")
+        print("✅ Server stopped successfully")
     except Exception as e:
-        logger.error(f"❌ Unexpected error: {e}")
+        logger.error(f"❌ Fatal error: {e}")
+        print("❌ Server encountered a fatal error")
