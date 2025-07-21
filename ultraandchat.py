@@ -24,7 +24,7 @@ uv_pipe, tts_model = None, None
 executor = ThreadPoolExecutor(max_workers=2)
 pcs = set()
 
-# Simple HTML
+# HTML Client
 HTML_CLIENT = """
 <!DOCTYPE html>
 <html>
@@ -126,7 +126,10 @@ HTML_CLIENT = """
                 log('✅ Microphone ready');
 
                 pc = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
                 });
 
                 localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
@@ -149,6 +152,8 @@ HTML_CLIENT = """
                     if (pc.connectionState === 'connected') {
                         updateStatus('🎤 Listening', 'connected');
                         stopBtn.disabled = false;
+                    } else if (pc.connectionState === 'failed') {
+                        stop();
                     }
                 };
 
@@ -213,7 +218,34 @@ HTML_CLIENT = """
 </html>
 """
 
-# Simple audio track that actually works
+# FIXED: ICE Candidate Parser
+def parse_ice_candidate(candidate_str):
+    """Parse ICE candidate string into components"""
+    try:
+        # Remove "candidate:" prefix if present
+        if candidate_str.startswith("candidate:"):
+            candidate_str = candidate_str[10:]
+        
+        parts = candidate_str.split()
+        if len(parts) < 8:
+            return None
+            
+        return {
+            'foundation': parts[0],
+            'component': int(parts[1]),
+            'protocol': parts[2],
+            'priority': int(parts[3]),
+            'ip': parts[4],
+            'port': int(parts[5]),
+            'type': parts[7],  # parts[6] is "typ"
+            'relatedAddress': None,
+            'relatedPort': None
+        }
+    except Exception as e:
+        logger.error(f"Failed to parse ICE candidate: {e}")
+        return None
+
+# Simple audio track
 class SimpleAudioTrack(MediaStreamTrack):
     kind = "audio"
     
@@ -454,7 +486,8 @@ async def websocket_handler(request):
     logger.info("WebSocket connected")
     
     pc = RTCPeerConnection(RTCConfiguration([
-        RTCIceServer(urls="stun:stun.l.google.com:19302")
+        RTCIceServer(urls="stun:stun.l.google.com:19302"),
+        RTCIceServer(urls="stun:stun1.l.google.com:19302")
     ]))
     pcs.add(pc)
     
@@ -495,11 +528,25 @@ async def websocket_handler(request):
                     
                 elif data["type"] == "ice-candidate":
                     candidate_data = data["candidate"]
-                    await pc.addIceCandidate(RTCIceCandidate(
-                        sdpMid=candidate_data["sdpMid"],
-                        sdpMLineIndex=candidate_data["sdpMLineIndex"],
-                        candidate=candidate_data["candidate"]
-                    ))
+                    candidate_str = candidate_data.get("candidate", "")
+                    
+                    # FIXED: Parse candidate properly
+                    parsed = parse_ice_candidate(candidate_str)
+                    if parsed:
+                        try:
+                            await pc.addIceCandidate(RTCIceCandidate(
+                                component=parsed["component"],
+                                foundation=parsed["foundation"],
+                                ip=parsed["ip"],
+                                port=parsed["port"],
+                                priority=parsed["priority"],
+                                protocol=parsed["protocol"],
+                                type=parsed["type"],
+                                sdpMid=candidate_data.get("sdpMid"),
+                                sdpMLineIndex=candidate_data.get("sdpMLineIndex")
+                            ))
+                        except Exception as e:
+                            logger.error(f"Failed to add ICE candidate: {e}")
                     
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
@@ -548,9 +595,10 @@ async def main():
     site = web.TCPSite(runner, '0.0.0.0', 7860)
     await site.start()
     
-    print("\n🚀 WORKING VOICE ASSISTANT")
+    print("\n🚀 FIXED VOICE ASSISTANT")
     print("📡 http://0.0.0.0:7860")
-    print("🔧 Simplified & Fixed")
+    print("🔧 ICE Candidate Issue Fixed")
+    print("🎤 Should connect properly now")
     print("🛑 Press Ctrl+C to stop\n")
     
     await asyncio.Event().wait()
