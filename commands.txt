@@ -1,10 +1,10 @@
 cd workspace
 python3 -m venv venv
 source venv/bin/activate
-git clone https://github.com/devasphn/UltraChatLive1/ 
-cd UltraChatLive1
+git clone https://github.com/devasphn/ALLFilesS2SWorking/ 
+cd ALLFilesS2SWorking
 
-apt-get update && apt-get install -y libsox-dev libsndfile1-dev portaudio19-dev
+apt-get update && apt-get install -y libsox-dev libsndfile1-dev portaudio19-dev ffmpeg
 
 pip install --upgrade pip
 
