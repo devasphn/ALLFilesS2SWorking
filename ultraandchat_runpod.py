@@ -73,11 +73,7 @@ try:
 except ImportError:
     logger.warning("⚠️ uvloop not found, using default event loop")
 
-warnings.filterwarnings("ignore")# --- 
-Global Variables ---
-uv_pipe, tts_model = None, None
-executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="audio_worker")
-pcs = set()
+
 
 # --- Runpod-Optimized WebRTC Configuration ---
 def get_runpod_ice_servers():
