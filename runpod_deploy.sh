@@ -64,7 +64,8 @@ try:
 
     print('📥 Downloading ChatterboxTTS model...')
     from chatterbox.tts import ChatterboxTTS
-    tts_model = ChatterboxTTS.from_pretrained()
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    tts_model = ChatterboxTTS.from_pretrained(device=device)
     print('✅ ChatterboxTTS downloaded')
 
     print('📥 Downloading Silero VAD model...')
