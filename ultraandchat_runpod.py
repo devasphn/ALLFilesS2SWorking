@@ -24,7 +24,17 @@ from chatterbox.tts import ChatterboxTTS
 import torch.hub
 
 # --- Runpod Environment Detection ---
-RUNPOD_POD_ID = os.environ.get('RUNPOD_POD_ID', 'local')
+# Runpod sets RUNPOD_POD_ID automatically, but if not available, try to extract from hostname
+RUNPOD_POD_ID = os.environ.get('RUNPOD_POD_ID')
+if not RUNPOD_POD_ID:
+    # Try to get from hostname (Runpod containers often have pod ID in hostname)
+    import socket
+    hostname = socket.gethostname()
+    if len(hostname) > 8 and hostname != 'localhost':
+        RUNPOD_POD_ID = hostname
+    else:
+        RUNPOD_POD_ID = 'local'
+
 RUNPOD_PUBLIC_IP = os.environ.get('RUNPOD_PUBLIC_IP', '0.0.0.0')
 RUNPOD_TCP_PORT_7860 = os.environ.get('RUNPOD_TCP_PORT_7860', '7860')
 
