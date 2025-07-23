@@ -35,8 +35,21 @@ else
     echo "✅ PM2 already installed"
 fi
 
-# Upgrade pip
-echo "🔧 Upgrading pip..."
+# Create and activate Python virtual environment
+echo "🐍 Setting up Python virtual environment..."
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+    echo "✅ Virtual environment created"
+else
+    echo "✅ Virtual environment already exists"
+fi
+
+# Activate virtual environment
+source venv/bin/activate
+echo "✅ Virtual environment activated"
+
+# Upgrade pip in virtual environment
+echo "🔧 Upgrading pip in virtual environment..."
 pip install --upgrade pip
 
 # Install PyTorch with CUDA support (matching commands.txt)
@@ -50,7 +63,7 @@ pip install torch-audiomentations silero-vad aiortc websockets aiohttp aiofiles 
 
 # Pre-download models to avoid cold start delays
 echo "📥 Pre-downloading models..."
-python3 -c "
+venv/bin/python -c "
 import torch
 import os
 import sys
@@ -93,6 +106,7 @@ except Exception as e:
 # Set proper permissions
 chmod +x ultraandchat_runpod.py
 chmod +x ultraandchat_runpod_websocket.py
+chmod +x ultraandchat_runpod_continuous.py
 
 echo "✅ Runpod deployment setup complete"
 
@@ -107,15 +121,22 @@ show_deployment_options() {
     echo "    • May have issues with Runpod UDP restrictions"
     echo "    • Best for: Local development, unrestricted networks"
     echo ""
-    echo "2️⃣  WebSocket Version (ultraandchat_runpod_websocket.py) [RECOMMENDED]"
+    echo "2️⃣  WebSocket Version (ultraandchat_runpod_websocket.py) [OLD_BUT_WORKING]"
     echo "    • UDP-free audio streaming"
     echo "    • Reliable on Runpod (TCP-only)"
     echo "    • Moderate latency (~1-2s)"
     echo "    • Best for: Runpod deployment, restricted networks"
     echo ""
-    echo "3️⃣  Deploy Both (for testing/comparison)"
+    echo "3️⃣  Continuous Conversation (ultraandchat_runpod_continuous.py) [RECOMMENDED NEW]"
+    echo "    • Natural 2-way conversation flow"
+    echo "    • Auto-resume listening after AI response"
+    echo "    • UDP-free with enhanced user experience"
+    echo "    • Best for: Interactive voice assistants"
+    echo ""
+    echo "4️⃣  Deploy All (for testing/comparison)"
     echo "    • WebRTC on port 7860"
     echo "    • WebSocket on port 7861"
+    echo "    • Continuous on port 7862"
     echo ""
     echo "="*60
 }
@@ -127,8 +148,8 @@ start_webrtc() {
     # Stop existing process if running
     pm2 delete ultraandchat 2>/dev/null || true
     
-    # Start with PM2
-    pm2 start python3 --name "ultraandchat" -- ultraandchat_runpod.py
+    # Start with PM2 using virtual environment
+    pm2 start venv/bin/python --name "ultraandchat" -- ultraandchat_runpod.py
     
     echo "✅ WebRTC Voice Assistant started with PM2"
     echo "📡 Access at: https://$RUNPOD_POD_ID-7860.proxy.runpod.net"
@@ -141,31 +162,54 @@ start_websocket() {
     # Stop existing process if running
     pm2 delete ultraandchat-ws 2>/dev/null || true
     
-    # Start with PM2
-    pm2 start python3 --name "ultraandchat-ws" -- ultraandchat_runpod_websocket.py
+    # Start with PM2 using virtual environment
+    pm2 start venv/bin/python --name "ultraandchat-ws" -- ultraandchat_runpod_websocket.py
     
     echo "✅ WebSocket Voice Assistant started with PM2"
     echo "📡 Access at: https://$RUNPOD_POD_ID-7860.proxy.runpod.net"
 }
 
-# Function to start both versions
-start_both() {
-    echo "🚀 Starting Both Voice Assistants with PM2..."
+# Function to start Continuous Conversation version
+start_continuous() {
+    echo "🚀 Starting Continuous Conversation Voice Assistant with PM2..."
+    
+    # Stop existing process if running
+    pm2 delete ultraandchat-continuous 2>/dev/null || true
+    
+    # Start with PM2 using virtual environment
+    pm2 start venv/bin/python --name "ultraandchat-continuous" -- ultraandchat_runpod_continuous.py
+    
+    echo "✅ Continuous Conversation Voice Assistant started with PM2"
+    echo "📡 Access at: https://$RUNPOD_POD_ID-7860.proxy.runpod.net"
+}
+
+# Function to start all versions
+start_all() {
+    echo "🚀 Starting All Voice Assistants with PM2..."
     
     # Stop existing processes if running
     pm2 delete ultraandchat 2>/dev/null || true
     pm2 delete ultraandchat-ws 2>/dev/null || true
+    pm2 delete ultraandchat-continuous 2>/dev/null || true
     
     # Start WebRTC version on port 7860
-    pm2 start python3 --name "ultraandchat" -- ultraandchat_runpod.py
+    pm2 start venv/bin/python --name "ultraandchat" -- ultraandchat_runpod.py
     
     # Start WebSocket version on port 7861
     export RUNPOD_TCP_PORT_7860=7861
-    pm2 start python3 --name "ultraandchat-ws" -- ultraandchat_runpod_websocket.py
+    pm2 start venv/bin/python --name "ultraandchat-ws" -- ultraandchat_runpod_websocket.py
     
-    echo "✅ Both Voice Assistants started with PM2"
+    # Start Continuous version on port 7862
+    export RUNPOD_TCP_PORT_7860=7862
+    pm2 start venv/bin/python --name "ultraandchat-continuous" -- ultraandchat_runpod_continuous.py
+    
+    # Reset environment variable
+    export RUNPOD_TCP_PORT_7860=7860
+    
+    echo "✅ All Voice Assistants started with PM2"
     echo "📡 WebRTC Version: https://$RUNPOD_POD_ID-7860.proxy.runpod.net"
     echo "📡 WebSocket Version: https://$RUNPOD_POD_ID-7861.proxy.runpod.net"
+    echo "📡 Continuous Version: https://$RUNPOD_POD_ID-7862.proxy.runpod.net"
 }
 
 # Check if deployment option is provided as argument
@@ -173,14 +217,16 @@ if [ "$1" = "webrtc" ] || [ "$1" = "1" ]; then
     start_webrtc
 elif [ "$1" = "websocket" ] || [ "$1" = "2" ]; then
     start_websocket
-elif [ "$1" = "both" ] || [ "$1" = "3" ]; then
-    start_both
+elif [ "$1" = "continuous" ] || [ "$1" = "3" ]; then
+    start_continuous
+elif [ "$1" = "all" ] || [ "$1" = "4" ]; then
+    start_all
 else
     # Interactive mode
     show_deployment_options
     
     echo "🤔 Which version would you like to deploy?"
-    echo "Enter your choice (1, 2, or 3): "
+    echo "Enter your choice (1, 2, 3, or 4): "
     read -r choice
     
     case $choice in
@@ -190,12 +236,15 @@ else
         2|websocket)
             start_websocket
             ;;
-        3|both)
-            start_both
+        3|continuous)
+            start_continuous
+            ;;
+        4|all)
+            start_all
             ;;
         *)
-            echo "❌ Invalid choice. Defaulting to WebSocket version (recommended for Runpod)..."
-            start_websocket
+            echo "❌ Invalid choice. Defaulting to Continuous version (recommended for best experience)..."
+            start_continuous
             ;;
     esac
 fi
@@ -207,14 +256,16 @@ pm2 list
 
 echo ""
 echo "🔧 Useful PM2 Commands:"
-echo "  pm2 list                    # Show all processes"
-echo "  pm2 logs                    # Show all logs"
-echo "  pm2 logs ultraandchat       # Show WebRTC logs"
-echo "  pm2 logs ultraandchat-ws    # Show WebSocket logs"
-echo "  pm2 restart ultraandchat    # Restart WebRTC version"
-echo "  pm2 restart ultraandchat-ws # Restart WebSocket version"
-echo "  pm2 stop all                # Stop all processes"
-echo "  pm2 delete all              # Delete all processes"
+echo "  pm2 list                           # Show all processes"
+echo "  pm2 logs                           # Show all logs"
+echo "  pm2 logs ultraandchat              # Show WebRTC logs"
+echo "  pm2 logs ultraandchat-ws           # Show WebSocket logs"
+echo "  pm2 logs ultraandchat-continuous   # Show Continuous logs"
+echo "  pm2 restart ultraandchat           # Restart WebRTC version"
+echo "  pm2 restart ultraandchat-ws        # Restart WebSocket version"
+echo "  pm2 restart ultraandchat-continuous # Restart Continuous version"
+echo "  pm2 stop all                       # Stop all processes"
+echo "  pm2 delete all                     # Delete all processes"
 
 echo ""
 echo "🎉 Deployment complete! Your voice assistant is running with PM2."
