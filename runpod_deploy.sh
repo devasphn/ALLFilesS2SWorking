@@ -84,3 +84,6 @@ chmod +x ultraandchat_runpod.py
 
 echo "✅ Runpod deployment setup complete"
 echo "🎯 Starting server..."
+
+# Start the voice assistant server
+python3 ultraandchat_runpod.py
