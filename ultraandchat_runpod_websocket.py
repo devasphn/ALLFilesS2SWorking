@@ -492,8 +492,9 @@ def get_websocket_html_client():
     </script>
 </body>
 </html>
-"""# --- Enhanc
-ed VAD System ---
+"""
+
+# --- Enhanced VAD System ---
 class ImprovedVAD:
     def __init__(self):
         self.webrtc_vad = webrtcvad.Vad(2)
