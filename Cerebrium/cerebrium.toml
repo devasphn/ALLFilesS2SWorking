@@ -1,0 +1,31 @@
+[cerebrium.deployment]
+name           = "voice-agent-project"
+python_version = "3.11"
+include        = ["./*"]
+
+[cerebrium.hardware]
+cpu        = 2
+memory     = 8.0
+compute    = "TURING_T4"
+gpu_count  = 1
+provider   = "aws"
+region     = "us-east-1"
+
+[cerebrium.dependencies.apt]
+"build-essential"  = "latest"
+ffmpeg              = "latest"
+"libsox-dev"        = "latest"
+"libsndfile1-dev"   = "latest"
+"portaudio19-dev"   = "latest"
+
+[cerebrium.dependencies.paths]
+pip = "requirements.txt"
+
+[cerebrium.runtime.custom]
+port       = 7860
+entrypoint = ["python", "Ultravox+Chatterbox.py"]
+
+[cerebrium.scaling]
+min_replicas = 1
+max_replicas = 1
+cooldown     = 10
