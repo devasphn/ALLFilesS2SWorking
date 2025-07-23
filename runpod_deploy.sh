@@ -35,7 +35,7 @@ pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https
 # Install other Python dependencies
 echo "🐍 Installing other Python dependencies..."
 pip install transformers librosa chatterbox-tts gradio numpy scipy huggingface-hub peft accelerate
-pip install torch-audiomentations silero-vad aiortc websockets aiohttp aiofiles soundfile webrtcvad pyaudio uvloop
+pip install torch-audiomentations silero-vad aiortc websockets aiohttp aiofiles soundfile webrtcvad pyaudio uvloop av
 
 # Pre-download models to avoid cold start delays
 echo "📥 Pre-downloading models..."
@@ -52,12 +52,19 @@ try:
     
     print('📥 Downloading Ultravox model...')
     from transformers import pipeline
-    pipeline('automatic-speech-recognition', model='fixie-ai/ultravox-v0_4', trust_remote_code=True)
+    # Use the correct task and parameters for Ultravox
+    uv_pipe = pipeline(
+        model='fixie-ai/ultravox-v0_4',
+        trust_remote_code=True,
+        device_map='auto',
+        torch_dtype=torch.float16,
+        return_tensors='pt'
+    )
     print('✅ Ultravox downloaded')
 
     print('📥 Downloading ChatterboxTTS model...')
     from chatterbox.tts import ChatterboxTTS
-    ChatterboxTTS.from_pretrained()
+    tts_model = ChatterboxTTS.from_pretrained()
     print('✅ ChatterboxTTS downloaded')
 
     print('📥 Downloading Silero VAD model...')
@@ -68,7 +75,7 @@ try:
     
 except Exception as e:
     print(f'❌ Model download error: {e}')
-    print('⚠️ Continuing anyway...')
+    print('⚠️ Continuing anyway - models will be loaded at runtime...')
 "
 
 # Set proper permissions
