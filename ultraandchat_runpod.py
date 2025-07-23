@@ -106,11 +106,7 @@ def get_runpod_ice_servers():
 def get_runpod_rtc_config():
     """Get RTCConfiguration optimized for Runpod"""
     config = RTCConfiguration(
-        iceServers=get_runpod_ice_servers(),
-        iceCandidatePoolSize=10,
-        bundlePolicy='max-bundle',
-        rtcpMuxPolicy='require',
-        iceTransportPolicy='all'  # Allow both UDP and TCP
+        iceServers=get_runpod_ice_servers()
     )
     webrtc_logger.info("⚙️ RTCConfiguration created for Runpod")
     return config
