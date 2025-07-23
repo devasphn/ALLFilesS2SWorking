@@ -73,8 +73,9 @@ try:
 except ImportError:
     logger.warning("⚠️ uvloop not found, using default event loop")
 
-warnings.filterwarnings("ignore")# --- 
-Global Variables ---
+warnings.filterwarnings("ignore")
+
+# --- Global Variables ---
 uv_pipe, tts_model = None, None
 executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="audio_worker")
 pcs = set()
@@ -639,8 +640,9 @@ def get_runpod_html_client():
     </script>
 </body>
 </html>
-"""# --- Enh
-anced ICE Candidate Parser with Runpod Logging ---
+"""
+
+# --- Enhanced ICE Candidate Parser with Runpod Logging ---
 def parse_ice_candidate_string(candidate_str: str) -> dict:
     """Parse ICE candidate string with better error handling and Runpod logging"""
     try:
@@ -925,8 +927,9 @@ class RobustAudioTrack(MediaStreamTrack):
                 try:
                     self._audio_queue.put_nowait(audio_int16)
                 except asyncio.QueueFull:
-                    pass# --
-- Audio Processor with Enhanced Runpod Logging ---
+                    pass
+
+# --- Audio Processor with Enhanced Runpod Logging ---
 class RobustAudioProcessor:
     def __init__(self, output_track, executor):
         self.input_track = None
@@ -1257,8 +1260,9 @@ def initialize_models() -> bool:
         
     except Exception as e:
         model_logger.error(f"❌ Model initialization failed on Runpod: {e}", exc_info=True)
-        return False# --- 
-WebSocket Handler with Runpod Optimizations ---
+        return False
+
+# --- WebSocket Handler with Runpod Optimizations ---
 async def websocket_handler(request):
     """Enhanced WebSocket handler optimized for Runpod"""
     ws = web.WebSocketResponse(
