@@ -1,0 +1,27 @@
+
+C:\Users\DEV>pip install cerebrium
+
+
+C:\Users\DEV>cerebrium login
+You will be redirected to the following URL to authenticate:
+https://rest-api.cerebrium.ai/code-verification?user_code=cdad91069c53d69557a6c46ff0aafe43d1f77358
+Logged in successfully.
+Current project context set to ID: p-7aa92c1d
+
+C:\Users\DEV>type "%USERPROFILE%\.cerebrium\config.yaml"
+
+
+D:\voice-agent>git clone https://github.com/devasphn/Cerebrium
+Cloning into 'Cerebrium'...
+remote: Enumerating objects: 6, done.
+remote: Counting objects: 100% (6/6), done.
+remote: Compressing objects: 100% (5/5), done.
+remote: Total 6 (delta 0), reused 0 (delta 0), pack-reused 0 (from 0)
+Receiving objects: 100% (6/6), done.
+
+D:\voice-agent>cd Cerebrium
+
+
+ D:\voice-agent\Cerebrium>pip install -r requirements.txt
+
+cerebrium deploy
